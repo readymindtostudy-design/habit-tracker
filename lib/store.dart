@@ -43,14 +43,18 @@ class AppState extends ChangeNotifier {
   // ---------------------------------------------------------------- lifecycle
 
   Future<void> init() async {
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    final String? raw = prefs.getString(_prefsKey);
-    if (raw != null) {
-      try {
-        _read(jsonDecode(raw) as Map<String, dynamic>);
-      } catch (_) {
-        // Corrupt blob: start clean rather than crash.
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String? raw = prefs.getString(_prefsKey);
+      if (raw != null) {
+        try {
+          _read(jsonDecode(raw) as Map<String, dynamic>);
+        } catch (_) {
+          // Corrupt blob: start clean rather than crash.
+        }
       }
+    } catch (_) {
+      // Storage unavailable: still start, so the app is never stuck.
     }
     if (timers.isEmpty) {
       timers = <FocusTimer>[
@@ -74,8 +78,14 @@ class AppState extends ChangeNotifier {
     runStatus = 'idle';
     remainingMs = durationOf('focus');
     loaded = true;
-    await NotificationService.init();
+    // Show the UI before touching plugins, so a plugin failure can never
+    // leave the app sitting on a spinner.
     notifyListeners();
+    try {
+      await NotificationService.init();
+    } catch (_) {
+      // Reminders are optional; never block startup on them.
+    }
     unawaited(syncNotifications());
   }
 
